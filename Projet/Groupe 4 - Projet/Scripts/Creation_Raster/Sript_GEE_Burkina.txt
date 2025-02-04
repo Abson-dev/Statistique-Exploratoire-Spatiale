@@ -1,0 +1,839 @@
+// Charger la collection Landsat 9 et filtrer par date et région
+var dataset = ee.ImageCollection('LANDSAT/LC09/C02/T1_L2')
+    .filterDate('2022-01-01', '2022-02-01')  // Période d'intérêt
+    .filterBounds(burkina);  // Filtrer par la région du Burkina
+
+// Appliquer les facteurs d'échelle pour norburkinaser les bandes
+function applyScaleFactors(image) {
+  var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2);
+  var thermalBands = image.select('ST_B.*').multiply(0.00341802).add(149.0);
+  return image.addBands(opticalBands, null, true)
+              .addBands(thermalBands, null, true);
+}
+
+// Fonction pour appliquer le masque de nuages
+function maskClouds(image) {
+  var cloudShadowBitMask = 1 << 3;
+  var cloudsBitMask = 1 << 5;
+  var qa = image.select('QA_PIXEL');
+  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
+               .and(qa.bitwiseAnd(cloudsBitMask).eq(0));
+  return image.updateMask(mask);
+}
+
+// Appliquer les facteurs d'échelle et le masque de nuages
+dataset = dataset.map(applyScaleFactors).map(maskClouds);
+
+// Créer un composite médian pour réduire l'effet des nuages
+var composite = dataset.median();
+
+// Vérifier les bandes disponibles
+print('Bandes disponibles:', composite.bandNames());
+
+var image = composite;
+
+var resolution = 3000;
+
+var image = image.reproject({
+  crs: 'EPSG:4326',  // Projection standard lat/lon
+  scale: resolution
+});
+
+
+// Découper le composite pour le Burkina
+var clip_burkina = image.clip(burkina);
+
+// Définir les paramètres de visualisation pour une couleur vraie (True Color)
+var visParams = {
+  bands: ['SR_B4', 'SR_B3', 'SR_B2'],  // Rouge, Vert, Bleu
+  min: 0,
+  max: 0.3,
+  gamma: 1.4
+};
+
+// Ajouter les bandes visualisées sur la carte
+Map.centerObject(burkina, 6);  // Zoom sur le Burkina
+Map.addLayer(clip_burkina, visParams, 'Burkina (Composite Médian - True Color)');
+
+// -----------------------------
+// 2. Définition des Fonctions de Calcul des Indices
+// -----------------------------
+
+// 2.1. Indices Végétaux
+function calculateARI(image) {
+  var ari = image.select('SR_B3').subtract(image.select('SR_B5')).rename('ARI');
+  return image.addBands(ari);
+}
+
+function calculateARI2(image) {
+  var ari2 = image.select('SR_B5')
+                .multiply(
+                  image.select('SR_B3').subtract(image.select('SR_B5'))
+                )
+                .rename('ARI2');
+  return image.addBands(ari2);
+}
+
+function calculateARVI(image, gamma) {
+  gamma = ee.Number(gamma || 0.5); // Valeur par défaut si gamma n'est pas fourni
+  var arvi = image.select('SR_B5')
+                .subtract(
+                  image.select('SR_B4').subtract(image.select('SR_B2').multiply(gamma))
+                )
+                .divide(
+                  image.select('SR_B5')
+                        .add(
+                          image.select('SR_B4').subtract(image.select('SR_B2').multiply(gamma))
+                        )
+                )
+                .rename('ARVI');
+  return image.addBands(arvi);
+}
+
+function calculateATSAVI(image, sla, slb) {
+  sla = ee.Number(sla || 0.16); // Valeur par défaut
+  slb = ee.Number(slb || 0.5);  // Valeur par défaut
+  var atsavi_numerator = image.select('SR_B5')
+                          .subtract(image.select('SR_B4').multiply(sla))
+                          .subtract(image.select('SR_B5').multiply(slb))
+                          .rename('ATSAVI_numerator');
+  var atsavi_denominator = image.select('SR_B5').multiply(sla)
+                            .add(image.select('SR_B4'))
+                            .subtract(image.select('SR_B5').multiply(sla.multiply(slb)))
+                            .add(ee.Number(0.08).multiply(ee.Number(1).add(sla.pow(2))));
+  var atsavi = atsavi_numerator.divide(atsavi_denominator).multiply(sla).rename('ATSAVI');
+  return image.addBands(atsavi);
+}
+
+function calculateAVI(image) {
+  var avi = image.select('SR_B5')
+                .multiply(image.select('SR_B4').subtract(1))
+                .multiply(image.select('SR_B5').subtract(image.select('SR_B4')))
+                .pow(1/3)
+                .rename('AVI');
+  return image.addBands(avi);
+}
+
+function calculateBCC(image) {
+  var bcc = image.select('SR_B2')
+                .divide(
+                  image.select('SR_B2')
+                       .add(image.select('SR_B3'))
+                       .add(image.select('SR_B4'))
+                )
+                .rename('BCC');
+  return image.addBands(bcc);
+}
+
+function calculateBNDVI(image) {
+  var bndvi = image.norburkinazedDifference(['SR_B5', 'SR_B2']).rename('BNDVI');
+  return image.addBands(bndvi);
+}
+
+function calculateAllVegetationIndices(image) {
+  image = calculateARI(image);
+  image = calculateARI2(image);
+  image = calculateARVI(image, 0.5);           // Ajustez gamma si nécessaire
+  image = calculateATSAVI(image, 0.16, 0.5);  // Ajustez sla et slb si nécessaire
+  image = calculateAVI(image);
+  image = calculateBCC(image);
+  image = calculateBNDVI(image);
+  return image;
+}
+
+// 2.2. Indices d'Urbanisation
+function calculateBLFEI(image) {
+  var average_GR_S2 = image.select(['SR_B3', 'SR_B4', 'SR_B7']).reduce(ee.Reducer.mean());
+  var blfei = average_GR_S2.subtract(image.select('SR_B6'))
+                              .divide(average_GR_S2.add(image.select('SR_B6')))
+                              .rename('BLFEI');
+  return image.addBands(blfei);
+}
+
+function calculateBRBA(image) {
+  var brba = image.select('SR_B4').divide(image.select('SR_B6')).rename('BRBA');
+  return image.addBands(brba);
+}
+
+function calculateDBI(image) {
+  var dbi_part1 = image.select('SR_B2').subtract(image.select('ST_B10'))
+                     .divide(image.select('SR_B2').add(image.select('ST_B10')));
+  var dbi_part2 = image.select('SR_B5').subtract(image.select('SR_B4'))
+                     .divide(image.select('SR_B5').add(image.select('SR_B4')));
+  var dbi = dbi_part1.subtract(dbi_part2).rename('DBI');
+  return image.addBands(dbi);
+}
+
+function calculateEBBI(image) {
+  var ebbi = image.select('SR_B6').subtract(image.select('SR_B5'))
+                 .divide(image.select('SR_B6').add(image.select('ST_B10')).sqrt().multiply(10))
+                 .rename('EBBI');
+  return image.addBands(ebbi);
+}
+
+function calculateIBI(image, L) {
+  // Définir L avec une valeur par défaut de 1.0 si non fourni
+  L = ee.Number(L || 1.0);
+  
+  // Calculer les parties de l'indice
+  var part1 = image.select('SR_B6').subtract(image.select('SR_B5'))
+                 .divide(image.select('SR_B6').add(image.select('SR_B5')));
+  
+  var part2 = image.select('SR_B5').subtract(image.select('SR_B4'))
+                 .multiply(ee.Number(1).add(L))
+                 .divide(image.select('SR_B5').add(image.select('SR_B4')).add(L));
+  
+  var part3 = image.select('SR_B3').subtract(image.select('SR_B6'))
+                 .divide(image.select('SR_B3').add(image.select('SR_B6')));
+  
+  var combined = part2.add(part3).divide(ee.Number(2));
+  
+  var ibi = part1.subtract(combined)
+                .divide(part1.add(combined))
+                .rename('IBI');
+  
+  return image.addBands(ibi);
+}
+
+function calculateNBAI(image) {
+  var s1_div_g = image.select('SR_B6').divide(image.select('SR_B3'));
+  var nbai = image.select('SR_B7').subtract(s1_div_g)
+                 .divide(image.select('SR_B7').add(s1_div_g))
+                 .rename('NBAI');
+  return image.addBands(nbai);
+}
+
+function calculateAllUrbanIndices(image) {
+  image = calculateBLFEI(image);
+  image = calculateBRBA(image);
+  image = calculateDBI(image);
+  image = calculateEBBI(image);
+  image = calculateIBI(image, 1.0); // Ajustez L si nécessaire
+  image = calculateNBAI(image);
+  return image;
+}
+
+// 2.3. Indices liés au Sol
+function calculateBI(image) {
+  var bi = image.select('SR_B6').add(image.select('SR_B4'))
+               .subtract(image.select('SR_B5').add(image.select('SR_B2')))
+               .divide(image.select('SR_B6').add(image.select('SR_B4'))
+                        .add(image.select('SR_B5').add(image.select('SR_B2'))))
+               .rename('BI');
+  return image.addBands(bi);
+}
+
+function calculateBITM(image) {
+  var bitm = image.select(['SR_B2', 'SR_B3', 'SR_B4'])
+                  .pow(ee.Image.constant(2))
+                  .reduce(ee.Reducer.mean())
+                  .sqrt()
+                  .rename('BITM');
+  return image.addBands(bitm);
+}
+
+function calculateBIXS(image) {
+  var bixs = image.select(['SR_B3', 'SR_B4'])
+                  .pow(ee.Image.constant(2))
+                  .reduce(ee.Reducer.mean())
+                  .sqrt()
+                  .rename('BIXS');
+  return image.addBands(bixs);
+}
+
+function calculateBaI(image) {
+  var bai = image.select('SR_B4').add(image.select('SR_B6'))
+                .subtract(image.select('SR_B5'))
+                .rename('BaI');
+  return image.addBands(bai);
+}
+
+function calculateDBSI(image) {
+  var dbsi = image.select('SR_B6').subtract(image.select('SR_B3'))
+                   .divide(image.select('SR_B6').add(image.select('SR_B3')))
+                   .subtract(
+                     image.select('SR_B5').subtract(image.select('SR_B4'))
+                           .divide(image.select('SR_B5').add(image.select('SR_B4')))
+                   )
+                   .rename('DBSI');
+  return image.addBands(dbsi);
+}
+
+function calculateEMBI(image) {
+  var numerator_part1 = image.select('SR_B6').subtract(image.select('SR_B7')).subtract(image.select('SR_B5'))
+                        .divide(image.select('SR_B6').add(image.select('SR_B7')).add(image.select('SR_B5')));
+  var numerator_part2 = image.select('SR_B3').subtract(image.select('SR_B6'))
+                        .divide(image.select('SR_B3').add(image.select('SR_B6')));
+  
+  var numerator = numerator_part1.add(ee.Number(0.5))
+                                   .subtract(numerator_part2)
+                                   .subtract(ee.Number(0.5));
+  var denominator = numerator_part1.add(ee.Number(0.5))
+                                 .add(numerator_part2)
+                                 .add(ee.Number(1.5));
+  
+  var embi = numerator.divide(denominator).rename('EMBI');
+  return image.addBands(embi);
+}
+
+function calculateAllSoilIndices(image) {
+  image = calculateBI(image);
+  image = calculateBITM(image);
+  image = calculateBIXS(image);
+  image = calculateBaI(image);
+  image = calculateDBSI(image);
+  image = calculateEMBI(image);
+  return image;
+}
+
+// 2.4. Indices liés à l'Eau
+// Définir les paramètres lambda pour le FAI (à ajuster selon vos besoins)
+var lambdaN = ee.Number(0.2); // Exemple de valeur, ajustez selon votre contexte
+var lambdaR = ee.Number(0.5); // Exemple de valeur, ajustez selon votre contexte
+var lambdaS1 = ee.Number(0.3); // Exemple de valeur, ajustez selon votre contexte
+
+// Fonction pour calculer l'ANDWI
+function calculateANDWI(image) {
+  var numerator = image.select('SR_B2').add(image.select('SR_B3')).add(image.select('SR_B4'))
+                    .subtract(image.select('SR_B5')).subtract(image.select('SR_B6')).subtract(image.select('SR_B7'));
+  var denominator = image.select('SR_B2').add(image.select('SR_B3')).add(image.select('SR_B4'))
+                      .add(image.select('SR_B5')).add(image.select('SR_B6')).add(image.select('SR_B7'));
+  var andwi = numerator.divide(denominator).rename('ANDWI');
+  return image.addBands(andwi);
+}
+
+// Fonction pour calculer l'AWEInsh
+function calculateAWEInsh(image) {
+  var aweinsh = image.select('SR_B3').subtract(image.select('SR_B6')).multiply(ee.Image.constant(4.0))
+                .subtract(image.select('SR_B5').multiply(ee.Image.constant(0.25)))
+                .add(image.select('SR_B7').multiply(ee.Image.constant(2.75)))
+                .rename('AWEInsh');
+  return image.addBands(aweinsh);
+}
+
+// Fonction pour calculer l'AWEIsh
+function calculateAWEIsh(image) {
+  var aweish = image.select('SR_B2')
+                .add(image.select('SR_B3').multiply(ee.Image.constant(2.5)))
+                .subtract(image.select('SR_B5').add(image.select('SR_B6')).multiply(ee.Image.constant(1.5)))
+                .subtract(image.select('SR_B7').multiply(ee.Image.constant(0.25)))
+                .rename('AWEIsh');
+  return image.addBands(aweish);
+}
+
+// Fonction pour calculer le FAI
+function calculateFAI(image) {
+  var factor = lambdaN.subtract(lambdaR).divide(lambdaS1.subtract(lambdaR));
+  var fai = image.select('SR_B5')
+                .subtract(
+                  image.select('SR_B4')
+                        .add(
+                          image.select('SR_B6').subtract(image.select('SR_B4')).multiply(factor)
+                        )
+                )
+                .rename('FAI');
+  return image.addBands(fai);
+}
+
+// Fonction pour calculer le LSWI
+function calculateLSWI(image) {
+  var lswi = image.norburkinazedDifference(['SR_B5', 'SR_B6']).rename('LSWI');
+  return image.addBands(lswi);
+}
+
+// Fonction pour calculer tous les indices liés à l'eau
+function calculateAllWaterIndices(image) {
+  image = calculateANDWI(image);
+  image = calculateAWEInsh(image);
+  image = calculateAWEIsh(image);
+  image = calculateFAI(image);
+  image = calculateLSWI(image);
+  return image;
+}
+
+// -----------------------------
+// 3. Application des Indices
+// -----------------------------
+
+// 3.1. Calculer les Indices Végétaux
+var imageWithVegetationIndices = calculateAllVegetationIndices(clip_burkina);
+
+// 3.2. Calculer les Indices d'Urbanisation
+var imageWithUrbanIndices = calculateAllUrbanIndices(clip_burkina);
+
+// 3.3. Calculer les Indices liés au Sol
+var imageWithSoilIndices = calculateAllSoilIndices(clip_burkina);
+
+// 3.4. Calculer les Indices liés à l'Eau
+var imageWithWaterIndices = calculateAllWaterIndices(clip_burkina);
+
+// 3.5. Fusionner tous les Indices dans une seule Image
+var imageAllIndices = imageWithVegetationIndices
+                        .addBands(imageWithUrbanIndices)
+                        .addBands(imageWithSoilIndices)
+                        .addBands(imageWithWaterIndices);
+
+// -----------------------------
+// 4. Définition des Paramètres de Visualisation pour Chaque Indice
+// -----------------------------
+
+// 4.1. Indices Végétaux
+var ariVis = {
+  min: -0.5,
+  max: 0.5,
+  palette: ['blue', 'white', 'red']
+};
+
+var ari2Vis = {
+  min: -1000,
+  max: 1000,
+  palette: ['purple', 'white', 'yellow']
+};
+
+var arviVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'white', 'green']
+};
+
+var atsaviVis = {
+  min: -1,
+  max: 1,
+  palette: ['brown', 'yellow', 'green']
+};
+
+var aviVis = {
+  min: 0,
+  max: 1,
+  palette: ['white', 'green']
+};
+
+var bccVis = {
+  min: 0,
+  max: 1,
+  palette: ['blue', 'white', 'green']
+};
+
+var bndviVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'white', 'green']
+};
+
+// 4.2. Indices d'Urbanisation
+var blfeiVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'white', 'red']
+};
+
+var brbaVis = {
+  min: 0,
+  max: 1,
+  palette: ['yellow', 'orange', 'red']
+};
+
+var dbiVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'white', 'green']
+};
+
+var ebbiVis = {
+  min: -1,
+  max: 1,
+  palette: ['brown', 'yellow', 'green']
+};
+
+var ibiVis = {
+  min: -1,
+  max: 1,
+  palette: ['purple', 'white', 'pink']
+};
+
+var nbaiVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'white', 'green']
+};
+
+// 4.3. Indices liés au Sol
+var biVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'white', 'green']
+};
+
+var bitmVis = {
+  min: 0,
+  max: 1,
+  palette: ['black', 'white', 'yellow']
+};
+
+var bixsVis = {
+  min: 0,
+  max: 1,
+  palette: ['black', 'white', 'green']
+};
+
+var baiVis = {
+  min: 0,
+  max: 1,
+  palette: ['white', 'brown', 'black']
+};
+
+var dbsiVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'white', 'green']
+};
+
+var embiVis = {
+  min: -1,
+  max: 1,
+  palette: ['purple', 'white', 'yellow']
+};
+
+// 4.4. Indices liés à l'Eau
+var andwiVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'white', 'red']
+};
+
+var aweinshVis = {
+  min: -1,
+  max: 1,
+  palette: ['purple', 'white', 'yellow']
+};
+
+var aweishVis = {
+  min: -1,
+  max: 1,
+  palette: ['orange', 'white', 'green']
+};
+
+var faiVis = {
+  min: -1,
+  max: 1,
+  palette: ['black', 'white', 'yellow']
+};
+
+var lswiVis = {
+  min: -1,
+  max: 1,
+  palette: ['white', 'blue']
+};
+
+// -----------------------------
+// 5. Ajout des Indices à la Carte
+// -----------------------------
+
+// 5.1. Ajouter les Indices Végétaux
+Map.addLayer(imageAllIndices.select('ARI'), ariVis, 'Burkina - ARI');
+Map.addLayer(imageAllIndices.select('ARI2'), ari2Vis, 'Burkina - ARI2');
+Map.addLayer(imageAllIndices.select('ARVI'), arviVis, 'Burkina - ARVI');
+Map.addLayer(imageAllIndices.select('ATSAVI'), atsaviVis, 'Burkina - ATSAVI');
+Map.addLayer(imageAllIndices.select('AVI'), aviVis, 'Burkina - AVI');
+Map.addLayer(imageAllIndices.select('BCC'), bccVis, 'Burkina - BCC');
+Map.addLayer(imageAllIndices.select('BNDVI'), bndviVis, 'Burkina - BNDVI');
+
+// 5.2. Ajouter les Indices d'Urbanisation
+Map.addLayer(imageAllIndices.select('BLFEI'), blfeiVis, 'Burkina - BLFEI');
+Map.addLayer(imageAllIndices.select('BRBA'), brbaVis, 'Burkina - BRBA');
+Map.addLayer(imageAllIndices.select('DBI'), dbiVis, 'Burkina - DBI');
+Map.addLayer(imageAllIndices.select('EBBI'), ebbiVis, 'Burkina - EBBI');
+Map.addLayer(imageAllIndices.select('IBI'), ibiVis, 'Burkina - IBI');
+Map.addLayer(imageAllIndices.select('NBAI'), nbaiVis, 'Burkina - NBAI');
+
+// 5.3. Ajouter les Indices liés au Sol
+Map.addLayer(imageAllIndices.select('BI'), biVis, 'Burkina - BI');
+Map.addLayer(imageAllIndices.select('BITM'), bitmVis, 'Burkina - BITM');
+Map.addLayer(imageAllIndices.select('BIXS'), bixsVis, 'Burkina - BIXS');
+Map.addLayer(imageAllIndices.select('BaI'), baiVis, 'Burkina - BaI');
+Map.addLayer(imageAllIndices.select('DBSI'), dbsiVis, 'Burkina - DBSI');
+Map.addLayer(imageAllIndices.select('EMBI'), embiVis, 'Burkina - EMBI');
+
+// 5.4. Ajouter les Indices liés à l'Eau
+Map.addLayer(imageAllIndices.select('ANDWI'), andwiVis, 'Burkina - ANDWI');
+Map.addLayer(imageAllIndices.select('AWEInsh'), aweinshVis, 'Burkina - AWEInsh');
+Map.addLayer(imageAllIndices.select('AWEIsh'), aweishVis, 'Burkina - AWEIsh');
+Map.addLayer(imageAllIndices.select('FAI'), faiVis, 'Burkina - FAI');
+Map.addLayer(imageAllIndices.select('LSWI'), lswiVis, 'Burkina - LSWI');
+
+
+// Définir les paramètres communs pour l'export
+var exportParams = {
+  region: burkina,
+  scale: 3000,  // Échelle en mètres pour Landsat
+  crs: 'EPSG:4326',  // Système de référence de coordonnées
+  maxPixels: 1e13  // Augmenter si nécessaire
+};
+
+// 6.1. Exporter les Indices Végétaux
+Export.image.toDrive({
+  image: imageAllIndices.select('ARI'),
+  description: 'Burkina_ARI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_ARI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('ARI2'),
+  description: 'Burkina_ARI2',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_ARI2',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('ARVI'),
+  description: 'Burkina_ARVI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_ARVI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('ATSAVI'),
+  description: 'Burkina_ATSAVI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_ATSAVI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('AVI'),
+  description: 'Burkina_AVI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_AVI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('BCC'),
+  description: 'Burkina_BCC',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_BCC',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('BNDVI'),
+  description: 'Burkina_BNDVI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_BNDVI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+// 6.2. Exporter les Indices d'Urbanisation
+Export.image.toDrive({
+  image: imageAllIndices.select('BLFEI'),
+  description: 'Burkina_BLFEI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_BLFEI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('BRBA'),
+  description: 'Burkina_BRBA',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_BRBA',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('DBI'),
+  description: 'Burkina_DBI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_DBI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('EBBI'),
+  description: 'Burkina_EBBI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_EBBI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('IBI'),
+  description: 'Burkina_IBI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_IBI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('NBAI'),
+  description: 'Burkina_NBAI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_NBAI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+// 6.3. Exporter les Indices liés au Sol
+Export.image.toDrive({
+  image: imageAllIndices.select('BI'),
+  description: 'Burkina_BI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_BI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('BITM'),
+  description: 'Burkina_BITM',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_BITM',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('BIXS'),
+  description: 'Burkina_BIXS',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_BIXS',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('BaI'),
+  description: 'Burkina_BaI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_BaI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('DBSI'),
+  description: 'Burkina_DBSI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_DBSI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('EMBI'),
+  description: 'Burkina_EMBI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_EMBI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+// 6.4. Exporter les Indices liés à l'Eau
+Export.image.toDrive({
+  image: imageAllIndices.select('ANDWI'),
+  description: 'Burkina_ANDWI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_ANDWI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('AWEInsh'),
+  description: 'Burkina_AWEInsh',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_AWEInsh',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('AWEIsh'),
+  description: 'Burkina_AWEIsh',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_AWEIsh',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('FAI'),
+  description: 'Burkina_FAI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_FAI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
+
+Export.image.toDrive({
+  image: imageAllIndices.select('LSWI'),
+  description: 'Burkina_LSWI',
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'Burkina_LSWI',
+  region: exportParams.region,
+  scale: exportParams.scale,
+  crs: exportParams.crs,
+  maxPixels: exportParams.maxPixels
+});
