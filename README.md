@@ -23,9 +23,7 @@ Prise en main des outils à travers des exercices basés sur des données admini
 
 Bloc 2 – Premières analyses spatiales (TP3–TP4)
 
-Compétences acquises 🎯 :
-
-Réaliser des calculs zonaux : Croiser des données vectorielles (ex. régions d’un pays) avec des données raster (ex. carte du paludisme) pour calculer des statistiques par zone (ex. taux moyen de paludisme par région).
+Compétences acquises 🎯 :Réaliser des calculs zonaux : Croiser des données vectorielles (ex. régions d’un pays) avec des données raster (ex. carte du paludisme) pour calculer des statistiques par zone (ex. taux moyen de paludisme par région).
 Effectuer une classification thématique : Regrouper les pixels d’un raster en classes (ex. "faible", "modéré", "grave") en fonction de seuils statistiques pour créer des cartes de risque.
 
 Outils utilisés 💻 :
@@ -39,9 +37,7 @@ Analyse de la prévalence du paludisme au Cameroun et au Sénégal pour identifi
 
 Bloc 3 – Analyses croisées et intégration de données (TP5–TP6 & TP11)
 
-Compétences acquises 🎯 :
-
-Intégrer des sources de données hétérogènes (sanitaires, démographiques comme WorldPop, événementielles comme les conflits).
+Compétences acquises 🎯 :Intégrer des sources de données hétérogènes (sanitaires, démographiques comme WorldPop, événementielles comme les conflits).
 Créer des rasters à partir de données ponctuelles (rasterisation) pour analyser la densité d’événements.
 Construire des indicateurs composites, comme le Conflict Diffusion Indicator (CDI), en combinant plusieurs couches d’information.
 
@@ -58,9 +54,7 @@ Analyser la diffusion des conflits au Mali en croisant densité de population et
 
 Bloc 4 – Ouverture vers la modélisation (TP7–TP9)
 
-Compétences acquises 🎯 :
-
-Initiation à la modélisation de la distribution d’espèces (SDM) pour prédire la présence d’une espèce en fonction de variables environnementales.
+Compétences acquises 🎯 :Initiation à la modélisation de la distribution d’espèces (SDM) pour prédire la présence d’une espèce en fonction de variables environnementales.
 Comprendre des notions avancées comme l’autocorrélation spatiale.
 Explorer de nouvelles sources de données.
 
@@ -75,9 +69,7 @@ Explorer des thématiques comme le changement climatique et l’agriculture.
 
 Bloc 5 – Applications avancées en télédétection (TP10–TP11)
 
-Compétences acquises 🎯 :
-
-Maîtriser la télédétection pour traiter des images satellitaires brutes.
+Compétences acquises 🎯 :Maîtriser la télédétection pour traiter des images satellitaires brutes.
 Calculer des indices spectraux (ex. NDVI pour la végétation, NDWI pour l’eau, NDBI/UI pour les zones urbaines) pour extraire des informations thématiques.
 
 Outils utilisés 💻 :
