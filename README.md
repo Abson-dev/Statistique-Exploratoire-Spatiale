@@ -5,9 +5,8 @@ Le cours de Statistique Exploratoire Spatiale est dispense par Mr Hema Aboubacar
 
 
 Bloc 1 – Fondations : Manipuler et visualiser les données (TP1–TP2)
-Compétences acquises 🎯 : 
 
-Importer, manipuler, visualiser et décrire les données spatiales de type vecteur (points, lignes, polygones) et raster (grilles de pixels).
+Compétences acquises 🎯 : Importer, manipuler, visualiser et décrire les données spatiales de type vecteur (points, lignes, polygones) et raster (grilles de pixels).
 Comprendre les métadonnées associées (système de coordonnées, résolution).
 Calculer des statistiques descriptives de base (moyenne, min, max, surface, etc.).
 
@@ -23,6 +22,7 @@ Applications concrètes 🌍 :
 Prise en main des outils à travers des exercices basés sur des données administratives et des indicateurs de paludisme pour des pays comme le Sénégal, Madagascar, le Mali et la Côte d'Ivoire.
 
 Bloc 2 – Premières analyses spatiales (TP3–TP4)
+
 Compétences acquises 🎯 :
 
 Réaliser des calculs zonaux : Croiser des données vectorielles (ex. régions d’un pays) avec des données raster (ex. carte du paludisme) pour calculer des statistiques par zone (ex. taux moyen de paludisme par région).
@@ -38,6 +38,7 @@ Applications concrètes 🌍 :
 Analyse de la prévalence du paludisme au Cameroun et au Sénégal pour identifier les zones à haut risque, utiles pour cibler les interventions sanitaires.
 
 Bloc 3 – Analyses croisées et intégration de données (TP5–TP6 & TP11)
+
 Compétences acquises 🎯 :
 
 Intégrer des sources de données hétérogènes (sanitaires, démographiques comme WorldPop, événementielles comme les conflits).
@@ -56,6 +57,7 @@ Estimer le nombre d’enfants dans des zones à haut risque de paludisme au Nige
 Analyser la diffusion des conflits au Mali en croisant densité de population et lieux d’événements violents.
 
 Bloc 4 – Ouverture vers la modélisation (TP7–TP9)
+
 Compétences acquises 🎯 :
 
 Initiation à la modélisation de la distribution d’espèces (SDM) pour prédire la présence d’une espèce en fonction de variables environnementales.
@@ -72,6 +74,7 @@ Prédire la répartition géographique des espèces dans des contextes écologiq
 Explorer des thématiques comme le changement climatique et l’agriculture.
 
 Bloc 5 – Applications avancées en télédétection (TP10–TP11)
+
 Compétences acquises 🎯 :
 
 Maîtriser la télédétection pour traiter des images satellitaires brutes.
