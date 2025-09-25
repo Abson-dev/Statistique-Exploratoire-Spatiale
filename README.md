@@ -88,15 +88,39 @@ Ce dépôt est conçu pour accompagner les apprenants dans leur progression à t
 
 ### TP 1
 
+Source : HDX (Humanitarian Data Exchange) - shapefiles niveaux 0-3, établis en 2016, mis à jour en 2024.
+Données : Limites administratives en format shapefile (WGS84), incluant régions, départements et communes.
+
 ### TP 2
+
+Données raster d'indicateurs de paludisme (prévalence)  de cas pour Madagascar, Sénégal, Mali et Côte d'Ivoire.
+
+Sources : Malaria Atlas Project (MAP) - Carte mondiale du paludisme (rasters de risque par région, basés sur données OMS et satellites).
 
 ### TP 3
 
+Données raster d'indicateurs de paludisme (prévalence)  de cas pour Madagascar, Sénégal, Mali et Côte d'Ivoire.
+
+Sources : Malaria Atlas Project (MAP) - Carte mondiale du paludisme (rasters de risque par région, basés sur données OMS et satellites).
+
+
 ### TP 4
+
+Données raster pour classification thématique (seuils basés sur moyenne ± écart-type) sur cartes de risque paludisme.
+
+Sources : Malaria Atlas Project (MAP) - Carte mondiale du paludisme (rasters de risque par région, basés sur données OMS et satellites).
 
 ### TP 5
 
+Données démographiques WorldPop (densité population, enfants <5 ans) pour le Niger, croisées avec rasters paludisme.
+
+Sources : WorldPop - Données Niger (rasters 100m résolution, estimations 2020 pour enfants <5 ans).
+
 ### TP 6
+
+Données démographiques WorldPop (densité population, enfants <5 ans) pour le Niger, croisées avec rasters paludisme.
+
+Sources : WorldPop - Données Niger (rasters 100m résolution, estimations 2020 pour enfants <5 ans).
 
 ### TP 8
 
@@ -106,9 +130,11 @@ Ce dépôt est conçu pour accompagner les apprenants dans leur progression à t
 
 ### TP 10
 
+Images Sentinel-2 brutes (bandes B2-B12) pour Afrique/Europe, calcul d'indices NDVI, NDWI, NDBI.
+
 ### TP 11
 
-
+Sources : ACLED
 
 ## License
 This course material is licensed under a Creative Commons Attribution 4.0 International (CC BY 4.0). You are free to re-use and adapt the material but are required to give appropriate credit to the original author as below:
